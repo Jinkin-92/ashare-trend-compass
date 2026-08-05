@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>自选股 - A-Share Trend Compass</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>自选股</h1>
+    <p id="date-label" class="muted">--</p>
+    <nav class="breadcrumb">
+      <a href="index.html">← 返回一级品种</a>
+    </nav>
+  </header>
+
+  <main>
+    <section id="summary">
+      <div class="summary-grid">
+        <div class="summary-card">
+          <div class="label">自选品种数</div>
+          <div class="value" id="total-count">0</div>
+        </div>
+        <div class="summary-card">
+          <div class="label">在右侧</div>
+          <div class="value" id="right-count">0</div>
+        </div>
+        <div class="summary-card">
+          <div class="label">平均 RS</div>
+          <div class="value" id="avg-rs">--</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>温度分布</h2>
+      <div id="dist-chart" class="chart" style="height:260px;"></div>
+    </section>
+
+    <section>
+      <h2>自选清单</h2>
+      <p class="muted section-hint">按温度排序。点击 ★ 移除自选，点击名称查看详情。</p>
+      <div class="toolbar-row">
+        <input type="text" id="search-input" placeholder="搜索自选名称 / 代码">
+        <button id="clear-btn" class="btn-secondary">清空自选</button>
+      </div>
+      <div id="watch-container"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>免责声明：本工具仅供研究参考，不构成投资建议。</p>
+  </footer>
+
+  <script src="js/list-shared.js?v=20260804"></script>
+  <script src="js/watch.js?v=20260804"></script>
+</body>
+</html>

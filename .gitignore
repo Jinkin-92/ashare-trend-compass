@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.local
+
+# Database (large binary files)
+*.db
+*.db-journal
+*.db-wal
+
+# Logs
+data/logs/
+*.log
+
+# Web snapshot data (generated, large)
+web/data/snapshots/
+web/data/indicators/
+web/data/calibration/
+web/data/*.json
+
+# Docs (calibration images, large)
+docs/calibration/*.jpg
+docs/calibration/*.png
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Pytest
+.pytest_cache/
+.coverage
+
+# Jupyter
+.ipynb_checkpoints/

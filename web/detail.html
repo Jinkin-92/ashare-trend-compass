@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>品种详情 - A-Share Trend Compass</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+  <header>
+    <div class="header-row">
+      <h1 id="symbol-name">品种详情 <span id="watch-toggle"></span></h1>
+      <a class="nav-link" href="watch.html">★ 自选</a>
+    </div>
+    <p id="symbol-meta">加载中...</p>
+    <nav class="breadcrumb">
+      <a href="index.html">← 返回一级品种</a>
+      <span class="breadcrumb-sep">·</span>
+      <a href="watch.html">查看自选清单</a>
+    </nav>
+  </header>
+
+  <main>
+    <section id="return-section">
+      <h2>累计收益</h2>
+      <div class="window-tabs" id="scale-tabs" style="margin-bottom:0.5rem;">
+        <button data-scale="linear" class="active">线性坐标</button>
+        <button data-scale="log">对数坐标</button>
+      </div>
+      <div id="return-chart" class="chart"></div>
+    </section>
+    <section id="temp-section">
+      <h2>温度历史时间轴</h2>
+      <div id="temp-timeline-chart" class="chart short"></div>
+    </section>
+    <section id="rs-section">
+      <h2>相对强度走势（1-99 分位）</h2>
+      <div id="rs-chart" class="chart short"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>免责声明：本工具仅供研究参考，不构成投资建议。</p>
+  </footer>
+
+  <script src="js/list-shared.js?v=20260729"></script>
+  <script src="js/chart-utils.js?v=20260729"></script>
+  <script src="js/detail.js?v=20260729"></script>
+</body>
+</html>

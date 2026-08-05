@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A-Share Trend Compass</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>A 股趋势罗盘</h1>
+    <p id="date-label">加载中...</p>
+    <div class="header-controls">
+      <label>截面日期：<select id="trade-date"></select></label>
+      <a class="nav-link" href="watch.html">★ 自选</a>
+      <button id="global-search-btn" class="btn-secondary">🔍 全局搜索</button>
+    </div>
+  </header>
+
+  <!-- 全局搜索面板 -->
+  <div id="search-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <input type="text" id="global-search-input" placeholder="搜索品种：名称 / 代码（指数 / 行业 / 概念 / 个股）" autofocus>
+        <button id="global-search-close" class="modal-close">×</button>
+      </div>
+      <div id="global-search-results" class="modal-body"></div>
+    </div>
+  </div>
+
+  <main>
+    <section id="top-card">
+      <div class="top-meta">
+        <div class="top-row1">
+          <h2 id="top-title">A 股</h2>
+          <span class="trade-date" id="top-date">--</span>
+        </div>
+        <p class="proxy-hint" id="proxy-hint"></p>
+      </div>
+      <div class="top-grid">
+        <div class="top-cell">
+          <div class="cell-label">最新价（CNY）</div>
+          <div class="cell-value" id="top-close">--</div>
+          <div class="cell-sub" id="top-pct">--</div>
+        </div>
+        <div class="top-cell">
+          <div class="cell-label">趋势温度</div>
+          <div class="cell-value" id="top-temp">--</div>
+        </div>
+        <div class="top-cell">
+          <div class="cell-label">趋势相对强度（1-99 分位）</div>
+          <div class="cell-value" id="top-rs">--</div>
+        </div>
+        <div class="top-cell">
+          <div class="cell-label">区间累计</div>
+          <div class="cell-value" id="top-cum">--</div>
+        </div>
+      </div>
+      <div class="window-tabs" id="window-tabs">
+        <button data-w="3M">近 3 月</button>
+        <button data-w="1Y" class="active">近 1 年</button>
+      </div>
+      <div class="window-tabs" id="scale-tabs" style="margin-top:0.5rem;">
+        <button data-scale="linear" class="active">线性坐标</button>
+        <button data-scale="log">对数坐标</button>
+      </div>
+      <div id="top-chart" class="chart top-chart"></div>
+    </section>
+
+    <section id="list">
+      <h2>一级品种</h2>
+      <p class="section-hint">点击进入对应分类，查看二级品种与成分股。点击表头可排序。</p>
+      <div class="toolbar-row">
+        <input type="text" id="search-input" placeholder="搜索名称 / 代码，如 半导体 / SW_801081">
+        <label><input type="checkbox" id="watch-only"> 只看自选</label>
+      </div>
+      <div id="list-container"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>免责声明：本工具仅供研究参考，不构成投资建议。</p>
+  </footer>
+
+  <script src="js/list-shared.js?v=20260804"></script>
+  <script src="js/chart-utils.js?v=20260804"></script>
+  <script src="js/app.js?v=20260804"></script>
+</body>
+</html>

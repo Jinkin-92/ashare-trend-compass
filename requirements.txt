@@ -1,0 +1,28 @@
+# A-Share Trend Compass - minimal dependencies
+# Run inside the existing DSA Python environment, or:
+# pip install -r requirements.txt
+
+# Config & env
+python-dotenv>=1.0.0
+
+# Data processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Database
+sqlalchemy>=2.0.0
+
+# Data source
+akshare>=1.12.0
+tenacity>=8.2.0
+requests>=2.31.0
+
+# Trading calendar helpers
+exchange-calendars>=4.13.0
+
+# tinyshare：全市场按交易日批量日线（daily_sync 个股补缺快路径）与 L2 成分映射
+# 注：不在 PyPI 标准名，按项目现有用法 pip install tinyshare
+tinyshare
+
+# baostock：个股日线兜底源（daily_sync fallback，TCP 直连不受 HTTP 代理影响）
+baostock

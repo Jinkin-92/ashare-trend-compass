@@ -1,0 +1,356 @@
+/* A-Share Trend Compass 前端样式 */
+
+:root {
+  --bg: #f8f9fa;
+  --text: #212529;
+  --up: #d93026;       /* A股：涨红 */
+  --down: #238b2c;     /* A股：跌绿 */
+  --right-side-bg: #f0e68c; /* 橄榄黄 */
+  --border: #dee2e6;
+  --hover: #f1f3f5;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+header, footer {
+  padding: 1rem 2rem;
+  background: #fff;
+  border-bottom: 1px solid var(--border);
+}
+header h1 { margin: 0; font-size: 1.5rem; }
+header p { margin: 0.3rem 0 0; color: #6c757d; font-size: 0.9rem; }
+header .header-controls { margin-top: 0.6rem; font-size: 0.9rem; }
+header .header-controls select {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.9rem;
+  background: #fff;
+}
+
+main { padding: 1rem 2rem; max-width: 1400px; margin: 0 auto; }
+
+section {
+  margin-bottom: 2rem;
+  background: #fff;
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+section h2 { margin: 0 0 1rem; font-size: 1.1rem; border-left: 4px solid #495057; padding-left: 0.6rem; }
+
+.chart { width: 100%; height: 360px; }
+.chart.short { height: 200px; }
+
+/* ---------- 顶部详情卡 ---------- */
+#top-card .top-row1 {
+  display: flex; align-items: baseline; gap: 1rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+}
+#top-card #top-title { margin: 0; font-size: 1.6rem; font-weight: 600; }
+#top-card .trade-date { color: #6c757d; font-size: 0.9rem; }
+#top-card .proxy-hint { color: #6c757d; font-size: 0.8rem; margin: 0.3rem 0 0; }
+#top-card .top-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin: 1rem 0;
+}
+@media (max-width: 720px) {
+  #top-card .top-grid { grid-template-columns: repeat(2, 1fr); }
+}
+#top-card .top-cell {
+  background: #f8f9fa;
+  border-radius: 6px;
+  padding: 0.7rem 0.9rem;
+}
+#top-card .cell-label { color: #6c757d; font-size: 0.78rem; }
+#top-card .cell-value { font-size: 1.4rem; font-weight: 600; margin: 0.2rem 0; }
+#top-card .cell-sub { font-size: 0.85rem; color: #6c757d; }
+#top-card .cell-value#top-temp { font-size: 1.8rem; }
+.top-chart { height: 240px; }
+
+/* 窗口切换按钮 */
+.window-tabs { display: flex; gap: 0.5rem; margin: 0.5rem 0 0.8rem; }
+.window-tabs button {
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 16px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text);
+  transition: background 0.15s;
+}
+.window-tabs button:hover { background: var(--hover); }
+.window-tabs button.active {
+  background: #495057;
+  color: #fff;
+  border-color: #495057;
+}
+
+/* ---------- Toolbar ---------- */
+#toolbar { margin-bottom: 1rem; }
+.toolbar-row {
+  display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; font-size: 0.9rem;
+}
+.toolbar-row label { display: inline-flex; align-items: center; gap: 0.3rem; }
+.toolbar-row select, .toolbar-row input[type="text"] {
+  padding: 0.3rem 0.5rem; border: 1px solid var(--border);
+  border-radius: 4px; font-size: 0.9rem;
+}
+.toolbar-row input[type="text"] { min-width: 180px; }
+
+/* ---------- Tables ---------- */
+.symbol-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+.symbol-table th, .symbol-table td {
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.symbol-table th { background: var(--hover); cursor: pointer; user-select: none; position: sticky; top: 0; }
+.symbol-table th small { color: #6c757d; font-weight: normal; font-size: 0.7rem; margin-left: 0.2rem; }
+.symbol-table th:hover { background: #e9ecef; }
+.symbol-table tbody tr:hover { background: #f8f9fa; }
+.symbol-table a { color: var(--text); text-decoration: none; }
+.symbol-table a:hover { text-decoration: underline; color: #0d6efd; }
+.symbol-table small { color: #6c757d; font-size: 0.75rem; }
+.symbol-table .temp-change {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0 0.3rem;
+  background: #fff3cd;
+  border: 1px solid #ffe69c;
+  border-radius: 3px;
+  color: #664d03;
+  font-size: 0.7rem;
+}
+
+.right-side { background: var(--right-side-bg) !important; }
+.right-side:hover { background: #ecdb6c !important; }
+
+.up { color: var(--up); }
+.down { color: var(--down); }
+
+/* ---------- List container grouping ---------- */
+#list-container h3 {
+  margin: 1.2rem 0 0.4rem;
+  font-size: 0.95rem;
+  color: #495057;
+  border-bottom: 1px dashed var(--border);
+  padding-bottom: 0.3rem;
+}
+
+.section-footer { text-align: center; margin: 0.4rem 0 1rem; }
+.section-toggle {
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.8rem;
+  color: var(--text);
+  cursor: pointer;
+}
+.section-toggle:hover { background: #e9ecef; }
+
+footer {
+  border-top: 1px solid var(--border);
+  border-bottom: none;
+  font-size: 0.85rem;
+  color: #6c757d;
+  margin-top: 2rem;
+  text-align: center;
+}
+
+/* ---------- 通用：温度色块 / 涨幅 / 右侧 / 空状态 / 面包屑 ---------- */
+.temp-badge { padding: 0 0.2rem; }
+.temp-empty, .pct-empty, .muted { color: #adb5bd; }
+.temp-change { margin-left: 0.3rem; color: #6c757d; font-size: 0.7rem; }
+
+.pct.up { color: var(--up); font-weight: 600; }
+.pct.down { color: var(--down); font-weight: 600; }
+.pct.flat { color: #6c757d; }
+
+.right-side-badge {
+  background: var(--right-side-bg);
+  padding: 0.05rem 0.4rem;
+  border-radius: 3px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #6b5a00;
+}
+
+tr.right-side { background: var(--right-side-bg); }
+tr.right-side:hover { background: #ead97a; }
+
+.empty-state {
+  padding: 1.5rem 1rem;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: var(--hover);
+  text-align: center;
+  color: #495057;
+}
+.empty-state p { margin: 0.3rem 0; }
+
+.breadcrumb { margin-top: 0.4rem; font-size: 0.9rem; }
+.breadcrumb a { color: #0d6efd; text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+.breadcrumb span { margin: 0 0.3rem; color: #adb5bd; }
+
+.section-hint { color: #6c757d; font-size: 0.85rem; margin: 0 0 0.6rem; }
+.empty { color: #adb5bd; padding: 1rem; text-align: center; }
+
+/* ---------- 自选股星标 ---------- */
+.watch-star {
+  cursor: pointer;
+  color: #c0c4c9;
+  font-size: 1rem;
+  user-select: none;
+  transition: color 0.15s, transform 0.15s;
+}
+.watch-star:hover { color: #f0a500; transform: scale(1.15); }
+.watch-star.on { color: #f0a500; }
+.watch-star.big { font-size: 1.3rem; margin-left: 0.4rem; vertical-align: middle; }
+th[data-key="watch"] { width: 2.5rem; }
+
+/* 趋势图区（l1.html / l2.html） */
+.trend-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  margin: 8px 0 18px;
+}
+@media (min-width: 900px) {
+  .trend-grid { grid-template-columns: 1fr 1fr 1fr; }
+}
+.trend-card {
+  background: #fafbfc;
+  border-radius: 6px;
+  padding: 10px 14px 4px;
+  border: 1px solid #eef;
+}
+.trend-title {
+  font-size: 13px;
+  color: #555;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+/* 自选页面 summary 卡 */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin: 14px 0;
+}
+.summary-card {
+  background: #fff;
+  padding: 14px 18px;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  border-left: 3px solid #5b8def;
+}
+.summary-card .label { font-size: 12px; color: #888; }
+.summary-card .value { font-size: 22px; font-weight: 700; color: #5b8def; margin: 4px 0; }
+
+/* 全局搜索 modal */
+.modal {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 80px;
+}
+.modal-content {
+  background: #fff; border-radius: 10px; width: 720px; max-width: 92vw;
+  max-height: 75vh; display: flex; flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+}
+.modal-header {
+  display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+  border-bottom: 1px solid #eee;
+}
+.modal-header input {
+  flex: 1; border: none; outline: none; padding: 8px 4px;
+  font-size: 15px; background: transparent;
+}
+.modal-close {
+  border: none; background: transparent; font-size: 24px;
+  cursor: pointer; color: #888; padding: 0 8px;
+}
+.modal-close:hover { color: #333; }
+.modal-body { overflow-y: auto; padding: 8px 0; }
+.g-section h4 {
+  font-size: 12px; color: #888; margin: 8px 16px 4px;
+  font-weight: 600; text-transform: uppercase;
+}
+.g-item {
+  display: grid;
+  grid-template-columns: 1fr 110px 60px 80px 50px;
+  align-items: center; gap: 8px;
+  padding: 8px 16px; text-decoration: none; color: #222;
+  border-bottom: 1px solid #f4f4f4;
+  font-size: 13px;
+}
+.g-item:hover { background: #f0f6ff; }
+.g-name { font-weight: 600; }
+.g-id { color: #999; font-family: monospace; font-size: 11px; }
+.g-temp, .g-pct { font-weight: 600; text-align: center; }
+.g-rs { color: #5b8def; font-weight: 600; text-align: right; }
+
+/* 头部导航按钮 */
+.nav-link {
+  color: #5b8def; text-decoration: none; font-weight: 600;
+  padding: 4px 10px; border-radius: 4px;
+}
+.nav-link:hover { background: #eef4ff; }
+.btn-secondary {
+  border: 1px solid #d0d8e6; background: #fff; color: #5b8def;
+  padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px;
+}
+.btn-secondary:hover { background: #f0f6ff; }
+
+/* 涨红跌绿（A 股惯例） */
+.pct.up { color: #d93026; }
+.pct.down { color: #1e8e3e; }
+.pct.flat { color: #888; }
+.pct-empty { color: #ccc; }
+
+/* 详情页 header 排版 */
+.header-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+}
+/ul.breadcrumb, nav.breadcrumb {
+  display: inline-flex; gap: 8px; align-items: center;
+  font-size: 13px; color: #888; margin: 8px 0;
+}
+.breadcrumb-sep { color: #ccc; }
+
+/* 自选按钮（详情页） */
+.watch-btn {
+  border: 1px solid #d0d8e6; background: #fff; color: #5b8def;
+  padding: 6px 14px; border-radius: 6px; cursor: pointer;
+  font-size: 14px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: all 0.15s;
+}
+.watch-btn:hover { background: #f0f6ff; border-color: #5b8def; }
+.watch-btn.on { background: #fff8e6; border-color: #f0a500; color: #c97a00; }
+.watch-btn.on:hover { background: #fff3d0; }
