@@ -41,12 +41,12 @@ EXTREME_IDX = {0, 6}  # 冻 / 沸
 
 # ---- 状态机参数 ----
 CONFIRM_DAYS: Dict[str, Dict[str, int]] = {
-    "沸": {"enter": 3, "exit": 6},
-    "冻": {"enter": 4, "exit": 8},
-    "热": {"enter": 3, "exit": 5},
-    "寒": {"enter": 3, "exit": 5},
-    "温": {"enter": 2, "exit": 3},
-    "凉": {"enter": 2, "exit": 3},
+    "沸": {"enter": 3, "exit": 1},
+    "冻": {"enter": 3, "exit": 1},
+    "热": {"enter": 2, "exit": 1},
+    "寒": {"enter": 2, "exit": 1},
+    "温": {"enter": 1, "exit": 1},
+    "凉": {"enter": 1, "exit": 1},
     "平": {"enter": 1, "exit": 1},
 }
 EXTREME_BUFFER_DAYS = 3  # 保留以兼容旧引用（v2 不再使用此常量）
@@ -100,7 +100,7 @@ def stretch_score(raw_temp: np.ndarray) -> np.ndarray:
     """对 [-1, 1] 的原始温度做分段立方拉伸 → [-100, 100]（带 clamp）。
 
     正向: y = x * 65 * (1 + 1.2 * x²)
-    负向: y = x * 65 * (1 + 3.0 * x²)  （负向放大更强，确保空头也能触及冻）
+    负向: y = x * 65 * (1 + 1.5 * x²)  （负向略放大，冻只在 raw ≤ -0.7 时触发）
     clamp: [-100, 100]
     """
     result = np.zeros_like(raw_temp, dtype=float)
@@ -109,7 +109,7 @@ def stretch_score(raw_temp: np.ndarray) -> np.ndarray:
     mask_neg = raw_temp < 0
 
     result[mask_pos] = raw_temp[mask_pos] * 65 * (1 + 1.2 * raw_temp[mask_pos] ** 2)
-    result[mask_neg] = raw_temp[mask_neg] * 65 * (1 + 3.0 * raw_temp[mask_neg] ** 2)
+    result[mask_neg] = raw_temp[mask_neg] * 65 * (1 + 1.5 * raw_temp[mask_neg] ** 2)
     # 零保持零
 
     return np.clip(result, -100.0, 100.0)
@@ -304,14 +304,14 @@ def run_temperature_state_machine(score_smooth) -> List[Optional[str]]:
                 need = CONFIRM_DAYS[rl]["enter"]
 
             if pending_days >= need:
-                # 每次只走 1 步，朝目标方向
-                step = 1 if tgt_idx > cur_idx else -1
-                current = _IDX_BUCKET[cur_idx + step]
+                # 确认天数已满足，直接跳到目标档位
+                # （确认天数本身就是滞后滤波，不需要额外限制为相邻转移）
+                current = rl
                 pending_level = None
                 pending_days = 0
         else:
-            pending_level = None
-            pending_days = 0
+            # 回到当前档位：保持 pending 不变（容忍小幅波动，不清零不递减）
+            pass
 
         state[i] = current
 

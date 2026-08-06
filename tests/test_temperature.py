@@ -94,7 +94,7 @@ def test_state_machine_first_valid_takes_raw():
     assert result[0] is None
     assert result[1] is None
     assert result[2] == "沸"   # 80 ≥ 70
-    assert result[3] == "沸"   # 50 ∈ [45,70) → 热，但确认天数不足
+    assert result[3] == "热"   # 50 ∈ [45,70) → 热，exit=1 直接跳到热
 
 
 def test_state_machine_nan_keeps_last_displayed():
@@ -105,50 +105,41 @@ def test_state_machine_nan_keeps_last_displayed():
     assert result[0] == "热"
     assert result[1] == "热"   # NaN → 沿用
     assert result[2] == "热"   # NaN → 沿用
-    # -20 → 凉，热 exit=5，nán 维持热 (pending=1 < 5)
-    assert result[3] == "热"
+    # -20 → 凉，热 exit=1，pending=1 ≥ 1 → 直接跳到凉
+    assert result[3] == "凉"
 
 
 def test_state_machine_confirm_enter():
-    """温 enter=2：目标连续 2 天才进入。"""
+    """温 enter=1：目标 1 天即进入。"""
     scores = pd.Series([0, 30, 30])
-    # 0→平, 30→温(enter=2)
+    # 0→平, 30→温(enter=1)
     result = run_temperature_state_machine(scores)
     assert result[0] == "平"
-    assert result[1] == "平"   # pending=1 < 2
-    assert result[2] == "温"   # pending=2 ≥ 2, 走 1 步
+    assert result[1] == "温"   # pending=1 ≥ 1, 直接跳到温
 
 
 def test_state_machine_confirm_exit():
-    """热 exit=5：离开需要 5 天确认。"""
+    """热 exit=1：离开 1 天确认。"""
     scores = pd.Series([50, 10, 10, 10, 10, 10])
     # 50→热, 10→平
     result = run_temperature_state_machine(scores)
     assert result[0] == "热"
-    assert result[1] == "热"   # pending=1, need=exit("热")=5
-    assert result[2] == "热"   # pending=2
-    assert result[3] == "热"   # pending=3
-    assert result[4] == "热"   # pending=4
-    assert result[5] == "温"   # pending=5 ≥ 5 → 走 1 步到温
+    assert result[1] == "平"   # exit=1, pending=1 ≥ 1 → 直接跳到平
+    assert result[5] == "平"
 
 
 def test_state_machine_adjacent_step():
-    """确认后每次只走 1 步。"""
-    # 沸(6) → 平(3)：走 3 步需要 3 次确认
+    """确认后直接跳到目标（不再一步步走）。"""
+    # 沸(6) → 平(3)：exit=1，1天确认后直接跳到平
     scores = pd.Series([80] + [0] * 20)
     result = run_temperature_state_machine(scores)
     assert result[0] == "沸"
-    # 沸 exit=6，需要 6 天确认 → 6天后走1步到热
-    # 热 exit=5，再 5 天 → 温
-    # 温 exit=3，再 3 天 → 平
-    # 总共: 6 + 5 + 3 = 14 天后到平
-    # index: 0=沸, 1-6=沸(pending 1-6), 7=热(走1步), 8-12=热(pending exit 1-5), 13=温, ...
-    assert result[6] == "热"   # 第6天确认 exit("沸")=6 → 走1步到热
-    assert result[7] == "热"
+    # 沸 exit=1，1天确认 → 直接跳到平
+    assert result[1] == "平"
 
 
 def test_state_machine_freeze_confirmation():
-    """冻 enter=4：空头极值也需 4 天确认。"""
+    """冻 enter=3：空头极值需 3 天确认。"""
     scores = pd.Series([-70, -70, -70, -70])
     result = run_temperature_state_machine(scores)
     assert result[0] == "冻"   # 直接进入
