@@ -53,8 +53,11 @@ def run(args):
     logger.info('===== 阶段 1/3：同步品种分类树 =====')
     pipeline = TrendPipeline()
     pipeline.init_schema()
-    n = pipeline.sync_symbols()
-    logger.info('品种树同步完成: %s 条', n)
+    try:
+        n = pipeline.sync_symbols()
+        logger.info('品种树同步完成: %s 条', n)
+    except Exception as e:
+        logger.warning('品种树同步失败（akshare 接口可能不可用），跳过: %s', e)
 
     # 2. 同步日线（增量 1 天）
     logger.info('===== 阶段 2/3：同步日线（增量） =====')
