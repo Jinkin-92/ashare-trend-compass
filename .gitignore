@@ -19,6 +19,7 @@ venv/
 *.db
 *.db-journal
 *.db-wal
+*.bak*
 
 # Logs
 data/logs/
