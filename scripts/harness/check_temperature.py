@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""温度状态机门禁（全历史）。
+"""温度门禁。
 
-约束：
-- C1: 相邻转移——同一品种相邻两个交易日的温度档位差 ≤ 1（全历史逐行检查）。
-      2026-07-29 事故：补缺改价后只写新日期，1297 个品种在单日跳 2-4 档。
-- C2: 沸/冻 3 日缓冲——沸/冻 连续段长度 ≥ 3；长度 < 3 的段只允许出现在
-      该品种序列末尾（缓冲刚开始，数据截断）。
+2026-08-07 起温度标签由平滑分直接映射（绕过状态机），旧的「相邻转移 ≤1 档」
+「沸/冻至少维持 3 日」约束随之失效（那两个约束守护的是状态机标签语义；
+07-29 跳档事故模式现由引擎每日回写最近 21 自然日窗口吸收）。
+现约束：
+- C1: 最新截面标签与当前公式重算一致（L1/L2/指数全量 + 个股固定随机抽样 300），
+      防止公式变更后库内标签停留在旧口径。
+- C2: 温度取值合法（ ∈ 七档）。
 - C3: 有温度的行 temperature_score 不为 NULL。
 
 用法：python scripts/harness/check_temperature.py
@@ -14,6 +16,7 @@
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -22,8 +25,10 @@ sys.path.insert(0, str(ROOT))
 from sqlalchemy import text
 
 from src.db import get_session
+from src.indicators.temperature import TEMPERATURE_LEVELS, classify_temperature
 
 LV = {"冻": 0, "寒": 1, "凉": 2, "平": 3, "温": 4, "热": 5, "沸": 6}
+STOCK_SAMPLE = 300
 
 failures = 0
 
@@ -44,37 +49,73 @@ def main():
             s.bind,
         )
     print(f"载入有温度的行: {len(df):,}")
-    df["lv"] = df["temperature"].map(LV)
-    df = df.sort_values(["symbol_id", "trade_date"])
 
-    # C1 相邻转移
-    prev_lv = df.groupby("symbol_id")["lv"].shift(1)
-    jump = (df["lv"] - prev_lv).abs()
-    viol = df[jump > 1]
+    # C2 档位取值合法
+    bad_lv = df[~df["temperature"].isin(TEMPERATURE_LEVELS)]
     check(
-        "C1 温度相邻转移（全历史，违例=跳变 >1 档）",
-        len(viol) == 0,
-        f"{len(viol)} 行违例，样例: {viol[['symbol_id','trade_date','temperature']].head(5).values.tolist()}",
-    )
-
-    # C2 沸/冻最短持续 3 段
-    is_extreme = df["lv"].isin([0, 6])
-    grp = (is_extreme != is_extreme.groupby(df["symbol_id"]).shift(1, fill_value=False)).groupby(df["symbol_id"]).cumsum()
-    runs = df[is_extreme].groupby([df["symbol_id"], grp[is_extreme]]).agg(
-        n=("lv", "size"), last_date=("trade_date", "max"), lv=("lv", "first")
-    )
-    max_dates = df.groupby("symbol_id")["trade_date"].max()
-    runs["is_tail"] = runs["last_date"] == runs.index.get_level_values(0).map(max_dates)
-    bad_runs = runs[(runs["n"] < 3) & (~runs["is_tail"])]
-    check(
-        "C2 沸/冻至少维持 3 个交易日（末段除外）",
-        len(bad_runs) == 0,
-        f"{len(bad_runs)} 段违例，样例: {bad_runs.head(5).index.tolist()}",
+        "C2 温度取值 ∈ 七档",
+        len(bad_lv) == 0,
+        f"{len(bad_lv)} 行非法，样例: {bad_lv['temperature'].unique()[:5].tolist()}",
     )
 
     # C3 score 非空
     null_score = df["temperature_score"].isna().sum()
     check("C3 有温度的行 temperature_score 无 NULL", null_score == 0, f"{null_score} 行")
+
+    # C1 最新截面独立重算比对
+    with get_session() as s:
+        meta = pd.DataFrame(
+            s.execute(
+                text("SELECT symbol_id, node_type FROM symbols")
+            ).all(),
+            columns=["symbol_id", "node_type"],
+        )
+    core = meta[meta["node_type"].isin(["industry_l1", "industry_l2", "index"])]["symbol_id"].tolist()
+    stocks = meta[meta["node_type"] == "stock"]["symbol_id"]
+    sampled = stocks.sample(n=min(STOCK_SAMPLE, len(stocks)), random_state=42).tolist()
+    sample_ids = core + sampled
+
+    latest = df.sort_values("trade_date").groupby("symbol_id").tail(1).set_index("symbol_id")["temperature"]
+
+    mismatches = []
+    checked = 0
+    for chunk in [sample_ids[i:i + 500] for i in range(0, len(sample_ids), 500)]:
+        placeholders = ",".join(f":s{i}" for i in range(len(chunk)))
+        params = {f"s{i}": sid for i, sid in enumerate(chunk)}
+        with get_session() as s:
+            prices = pd.read_sql(
+                text(
+                    f"SELECT symbol_id, trade_date, close, high, low FROM daily_price "
+                    f"WHERE symbol_id IN ({placeholders}) ORDER BY symbol_id, trade_date"
+                ),
+                s.bind,
+                params=params,
+            )
+        if prices.empty:
+            continue
+        prices["trade_date"] = pd.to_datetime(prices["trade_date"])
+        for sid, g in prices.groupby("symbol_id"):
+            if sid not in latest.index or len(g) < 61:
+                continue
+            close = pd.Series(g["close"].values, index=g["trade_date"])
+            high = pd.Series(g["high"].values, index=g["trade_date"])
+            low = pd.Series(g["low"].values, index=g["trade_date"])
+            try:
+                res = classify_temperature(close, high, low)
+            except Exception:
+                continue
+            recomputed = res["temperature"].dropna()
+            if recomputed.empty:
+                continue
+            checked += 1
+            if str(recomputed.iloc[-1]) != str(latest[sid]):
+                mismatches.append((sid, str(latest[sid]), str(recomputed.iloc[-1])))
+
+    check(
+        f"C1 最新截面标签 == 当前公式重算（{checked} 品种抽样）",
+        len(mismatches) == 0,
+        f"{len(mismatches)} 个不一致，样例: {mismatches[:5]}",
+    )
 
     print("\n全部通过" if failures == 0 else f"\n{failures} 项约束失败")
     return 0 if failures == 0 else 1

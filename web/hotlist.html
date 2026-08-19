@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>热点看板 · A 股趋势罗盘</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    /* 看板专属样式 */
+    .summary-strip {
+      display: flex; flex-wrap: wrap; gap: 14px;
+      margin: 1rem 0 0.5rem;
+      padding: 12px 16px;
+      background: linear-gradient(135deg, #fff7ed 0%, #fff 60%);
+      border: 1px solid #fde6c1;
+      border-radius: 8px;
+    }
+    .summary-strip .item { display: flex; align-items: baseline; gap: 6px; font-size: 0.92rem; }
+    .summary-strip .item .num { font-size: 1.4rem; font-weight: 700; color: #d93026; }
+    .summary-strip .item .num.cool { color: #6c757d; }
+    .summary-strip .item .label { color: #6c757d; }
+
+    .board-section {
+      margin-top: 1.5rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .board-section header {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 8px;
+      padding: 10px 16px;
+      background: var(--hover);
+      border-bottom: 1px solid var(--border);
+    }
+    .board-section h3 { margin: 0; font-size: 1rem; }
+    .board-section .meta { color: #6c757d; font-size: 0.85rem; }
+    .board-section .badge-pill {
+      display: inline-block; padding: 2px 10px;
+      border-radius: 10px; font-size: 0.75rem; font-weight: 600;
+    }
+    .badge-pill.warm { background: #fff3cd; color: #664d03; border: 1px solid #ffe69c; }
+    .badge-pill.hot  { background: #ffe2dd; color: #b12516; border: 1px solid #f5b5ad; }
+    .badge-pill.break { background: #ffefc1; color: #8a4a00; border: 1px solid #f3c971; }
+    .board-section table { margin-top: 0; }
+    .board-section table th { background: #fff; }
+    .row-empty { padding: 14px 18px; color: #adb5bd; font-size: 0.9rem; text-align: center; }
+
+    /* 高亮温→热这一行：左边一条橙色竖条 */
+    tr.break-row { background: #fffaf0; }
+    tr.break-row:hover { background: #fff3d6; }
+
+    /* 链接进 L2 / 个股 */
+    .board-section a { color: var(--text); text-decoration: none; }
+    .board-section a:hover { color: #0d6efd; text-decoration: underline; }
+
+    .header-meta-row {
+      display: flex; flex-wrap: wrap; gap: 18px;
+      align-items: baseline; font-size: 0.88rem; color: #555;
+    }
+    .header-meta-row strong { color: #212529; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>热点看板</h1>
+    <p id="date-label">加载中...</p>
+    <div class="header-controls">
+      <a class="nav-link" href="index.html">📊 主前端</a>
+      <a class="nav-link" href="watch.html">★ 自选</a>
+      <button id="global-search-btn" class="btn-secondary">🔍 全局搜索</button>
+    </div>
+  </header>
+
+  <!-- 全局搜索面板 -->
+  <div id="search-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <input type="text" id="global-search-input" placeholder="搜索品种：名称 / 代码（指数 / 行业 / 概念 / 个股）" autofocus>
+        <button id="global-search-close" class="modal-close">×</button>
+      </div>
+      <div id="global-search-results" class="modal-body"></div>
+    </div>
+  </div>
+
+  <main>
+    <section>
+      <h2>今日重点信号</h2>
+      <p class="section-hint">
+        温→热：上一交易日温度档为「温」、今日跳到「热」的新晋品种。热或沸：今日已确认强势的品种。
+        行业数据常滞后个股 1 天（L2 与个股可能显示不同日期），属已知现象。
+      </p>
+      <div class="summary-strip" id="summary-strip">
+        <div class="item"><span class="label">L2 温→热</span><span class="num" id="s-l2w">--</span></div>
+        <div class="item"><span class="label">L2 热/沸</span><span class="num" id="s-l2h">--</span></div>
+        <div class="item"><span class="label">个股 温→热</span><span class="num" id="s-sw">--</span></div>
+        <div class="item"><span class="label">个股 热/沸</span><span class="num" id="s-sh">--</span></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>详细分组</h2>
+
+      <div class="board-section" id="sec-l2-warm">
+        <header>
+          <h3>📊 申万二级行业 · 温→热</h3>
+          <div>
+            <span class="badge-pill break">新晋</span>
+            <span class="meta" id="meta-l2-warm"></span>
+          </div>
+        </header>
+        <div id="body-l2-warm"><p class="row-empty">加载中...</p></div>
+      </div>
+
+      <div class="board-section" id="sec-l2-hot">
+        <header>
+          <h3>📊 申万二级行业 · 热 / 沸</h3>
+          <div>
+            <span class="badge-pill hot">强势</span>
+            <span class="meta" id="meta-l2-hot"></span>
+          </div>
+        </header>
+        <div id="body-l2-hot"><p class="row-empty">加载中...</p></div>
+      </div>
+
+      <div class="board-section" id="sec-stock-warm">
+        <header>
+          <h3>📈 个股 · 温→热</h3>
+          <div>
+            <span class="badge-pill break">新晋</span>
+            <span class="meta" id="meta-stock-warm"></span>
+          </div>
+        </header>
+        <div id="body-stock-warm"><p class="row-empty">加载中...</p></div>
+      </div>
+
+      <div class="board-section" id="sec-stock-hot">
+        <header>
+          <h3>📈 个股 · 热 / 沸</h3>
+          <div>
+            <span class="badge-pill hot">强势</span>
+            <span class="meta" id="meta-stock-hot"></span>
+          </div>
+        </header>
+        <div id="body-stock-hot"><p class="row-empty">加载中...</p></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>免责声明：本工具仅供研究参考，不构成投资建议。</p>
+  </footer>
+
+  <script src="js/list-shared.js?v=20260814"></script>
+  <script src="js/hotlist.js?v=20260814"></script>
+</body>
+</html>

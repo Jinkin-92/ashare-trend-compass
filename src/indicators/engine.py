@@ -29,8 +29,8 @@ _LOOKBACK_BUFFER_DAYS = 150
 _RS_UPSERT_MIN_DAYS = 14
 
 # RS 读取窗口在 upsert 窗口基础上额外前推的自然日数。
-# weighted_return 最长窗口是 252 个交易日，读取必须再多留 ~400 自然日
-# （约 273 个交易日），否则缺窗口 reweight 会让增量结果与全量口径不一致。
+# weighted_return 最长窗口是 126 个交易日（快窗口口径），读取必须再多留
+# ~200 自然日（约 136 个交易日），否则缺窗口 reweight 会让增量结果与全量口径不一致。
 _RS_READ_BUFFER_DAYS = 400
 
 # 温度增量重写窗口（自然日）：每天除写新日期外，回写最近这段历史。
@@ -652,7 +652,7 @@ def run_indicator_update(
     # 首次全量；后续每天只 upsert「RS 已写最大日期的次日」与「最近 _RS_UPSERT_MIN_DAYS 自然日」
     # 中更早的那个起的窗口（即：接续缺口 + 重写近两周，防止边缘修订残留）。
     # 注意：读取窗口要在 upsert 窗口前再前推 _RS_READ_BUFFER_DAYS 自然日，
-    # 否则最长 252 交易日的收益率窗口缺数据，reweight 后口径与全量不一致，
+    # 否则最长 126 交易日的收益率窗口缺数据，reweight 后口径与全量不一致，
     # 会把最近约 178 个交易日的正确 RS 用降级公式覆盖掉（历史 bug）。
     max_daily_price_date = _get_max_date("SELECT MAX(trade_date) AS max_date FROM daily_price") or end_date
     has_rs = pd.read_sql("SELECT 1 FROM daily_indicator WHERE rs_score IS NOT NULL LIMIT 1", db._engine).shape[0] > 0

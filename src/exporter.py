@@ -117,8 +117,8 @@ def _load_indicator_history(symbol_id: str, end_date: date, lookback_days: int =
             "temperature": r["temperature"],
             "temperature_score": _to_jsonable(r["temperature_score"]),
             "rs_score": int(r["rs_score"]) if pd.notna(r["rs_score"]) else None,
-            "is_right_side": bool(r["is_right_side"]) if r["is_right_side"] is not None else None,
-            "right_side_days": int(r["right_side_days"]) if r["right_side_days"] is not None else None,
+            "is_right_side": bool(r["is_right_side"]) if pd.notna(r["is_right_side"]) else None,
+            "right_side_days": int(r["right_side_days"]) if pd.notna(r["right_side_days"]) else None,
         }
         rows.append(rec)
     _HISTORY_CACHE[cache_key] = rows
@@ -157,6 +157,148 @@ def _prev_trade_date_sql(date_iso: str) -> str:
         f"AND di2.trade_date < '{date_iso}' "
         "ORDER BY di2.trade_date DESC LIMIT 1)"
     )
+
+
+def export_hotlist(out_dir: Path, trade_date: date) -> int:
+    """导出热点看板：4 组温档跃迁信号（按 L2 / 个股 各两组）+ 已确认强势 2 组。
+
+    用户交易策略：
+    - 买入：温→热（任意品种首次突破热档）
+    - 卖出：热→温 且仍处于右侧（说明经历过温→热的进入，现在回到温档是止盈位）
+    - 观察：热→沸（趋势更强但警惕过热）
+    - 警惕/减仓：沸→热（顶部回落一档）
+
+    输出 8 个分组（每组均按 L2 / stock 各一份）：
+    - warm_to_hot：温→热（**买入信号**）
+    - hot_to_warm：热→温，且右侧中（**卖出信号**）
+    - hot_to_boil：热→沸（**观察**）
+    - boil_to_hot：沸→热（**警惕/减仓**）
+    - hot_or_boil：今日温度 ∈ {热, 沸}（已确认强势池）
+
+    每条记录含：symbol_id, name, parent_name, temperature, prev_temperature,
+    rs_score, rs_score_trend, is_right_side, right_side_days, close, pct_chg,
+    effective_trade_date, prev_trade_date。
+
+    行业指数日线发布滞后（L2 行业常晚个股 1 天），所以按品种分别取
+    「≤ 截止日的最大交易日」作为该品种的 cur，再找严格小于 cur 的最大交易日
+    作为 prev。
+    """
+    cur_iso = trade_date.isoformat()
+
+    sql = """
+        WITH max_dates AS (
+            SELECT
+                di.symbol_id,
+                MAX(di.trade_date) AS cur,
+                (SELECT MAX(trade_date) FROM daily_indicator di2
+                  WHERE di2.symbol_id = di.symbol_id
+                    AND di2.trade_date < MAX(di.trade_date)) AS prev
+            FROM daily_indicator di
+            WHERE di.trade_date <= :cur
+            GROUP BY di.symbol_id
+        )
+        SELECT
+            s.symbol_id,
+            s.name,
+            s.node_type,
+            s.parent_id,
+            p.name AS parent_name,
+            md.cur AS effective_trade_date,
+            md.prev AS prev_trade_date,
+            di.temperature,
+            di.temperature_score,
+            di_prev.temperature AS prev_temperature,
+            di.rs_score,
+            di.rs_score_trend,
+            di.is_right_side,
+            di.right_side_days,
+            dp.close,
+            dp.pct_chg
+        FROM max_dates md
+        JOIN symbols s ON s.symbol_id = md.symbol_id
+        LEFT JOIN symbols p ON p.symbol_id = s.parent_id
+        JOIN daily_indicator di
+            ON di.symbol_id = md.symbol_id AND di.trade_date = md.cur
+        LEFT JOIN daily_indicator di_prev
+            ON di_prev.symbol_id = md.symbol_id AND di_prev.trade_date = md.prev
+        LEFT JOIN daily_price dp
+            ON dp.symbol_id = md.symbol_id AND dp.trade_date = md.cur
+        WHERE s.node_type IN ('industry_l2', 'stock')
+          AND di.temperature IN ('温', '热', '沸')
+          AND di_prev.temperature IS NOT NULL
+          AND di_prev.temperature IN ('温', '热', '沸')
+          AND (
+            -- 温→热（买入）
+            (di_prev.temperature = '温' AND di.temperature = '热')
+            -- 热→温（卖出候选，需配合右侧过滤）
+            OR (di_prev.temperature = '热' AND di.temperature = '温')
+            -- 热→沸（观察）
+            OR (di_prev.temperature = '热' AND di.temperature = '沸')
+            -- 沸→热（警惕/减仓）
+            OR (di_prev.temperature = '沸' AND di.temperature = '热')
+          )
+    """
+    df = pd.read_sql(sql, db._engine, params={"cur": cur_iso})
+    df = df.replace({np.nan: None})
+    rows = _records_to_json(df.to_dict(orient="records"))
+    for r in rows:
+        if "is_right_side" in r and r["is_right_side"] is not None:
+            r["is_right_side"] = bool(r["is_right_side"])
+        if "effective_trade_date" in r and r["effective_trade_date"] is not None:
+            r["effective_trade_date"] = str(r["effective_trade_date"])
+        if "prev_trade_date" in r and r["prev_trade_date"] is not None:
+            r["prev_trade_date"] = str(r["prev_trade_date"])
+
+    def _pick(node_type: str, kind: str) -> list:
+        """按 node_type + 信号类型筛选。
+
+        kind ∈ {warm_to_hot, hot_to_warm, hot_to_boil, boil_to_hot, hot_or_boil}
+        """
+        sel = [r for r in rows if r.get("node_type") == node_type]
+        cur_t = lambda r: r.get("temperature")  # noqa: E731
+        prev_t = lambda r: r.get("prev_temperature")  # noqa: E731
+        if kind == "warm_to_hot":
+            sel = [r for r in sel if prev_t(r) == "温" and cur_t(r) == "热"]
+        elif kind == "hot_to_warm":
+            # 热→温 且 仍在右侧（说明经历过温→热进入）
+            sel = [r for r in sel if prev_t(r) == "热" and cur_t(r) == "温" and r.get("is_right_side")]
+        elif kind == "hot_to_boil":
+            sel = [r for r in sel if prev_t(r) == "热" and cur_t(r) == "沸"]
+        elif kind == "boil_to_hot":
+            sel = [r for r in sel if prev_t(r) == "沸" and cur_t(r) == "热"]
+        elif kind == "hot_or_boil":
+            sel = [r for r in sel if cur_t(r) in ("热", "沸")]
+        else:
+            return []
+        # 排序：沸 > 热 > 温；RS 高 → 低；名称兜底
+        rank = {"沸": 2, "热": 1, "温": 0}
+        sel.sort(key=lambda r: (-(rank.get(cur_t(r), -1)), -(r.get("rs_score") or 0), r.get("name") or ""))
+        return sel
+
+    # 取每个分组的最大 effective_trade_date（让前端能显示「L2 截至 08-12 / 个股截至 08-13」）
+    l2_rows = [r for r in rows if r.get("node_type") == "industry_l2"]
+    stock_rows = [r for r in rows if r.get("node_type") == "stock"]
+    l2_effective = max((r.get("effective_trade_date") for r in l2_rows), default=None)
+    stock_effective = max((r.get("effective_trade_date") for r in stock_rows), default=None)
+
+    payload = {
+        "trade_date": cur_iso,
+        "l2_effective_date": l2_effective,
+        "stock_effective_date": stock_effective,
+        "l2_warm_to_hot": _pick("industry_l2", "warm_to_hot"),
+        "l2_hot_to_warm": _pick("industry_l2", "hot_to_warm"),
+        "l2_hot_to_boil": _pick("industry_l2", "hot_to_boil"),
+        "l2_boil_to_hot": _pick("industry_l2", "boil_to_hot"),
+        "l2_hot_or_boil": _pick("industry_l2", "hot_or_boil"),
+        "stock_warm_to_hot": _pick("stock", "warm_to_hot"),
+        "stock_hot_to_warm": _pick("stock", "hot_to_warm"),
+        "stock_hot_to_boil": _pick("stock", "hot_to_boil"),
+        "stock_boil_to_hot": _pick("stock", "boil_to_hot"),
+        "stock_hot_or_boil": _pick("stock", "hot_or_boil"),
+    }
+
+    path = out_dir / "hotlist.json"
+    return _write_json(path, payload)
 
 
 def export_symbols(out_dir: Path, trade_date: date) -> int:
@@ -623,6 +765,7 @@ def export_all(out_dir: Optional[Path] = None) -> ExportResult:
     b1 = export_dashboard(out_dir, trade_date)
     b2 = export_symbols(out_dir, trade_date)
     b3 = export_top_card(out_dir, trade_date)
+    b_hotlist = export_hotlist(out_dir, trade_date)
     n_files = export_indicator_history(out_dir, trade_date)
     b4 = export_benchmark(out_dir, trade_date)
     n_chunks = export_prices(out_dir, trade_date)
@@ -643,7 +786,7 @@ def export_all(out_dir: Optional[Path] = None) -> ExportResult:
         trade_date=trade_date,
         symbol_count=6075,
         price_chunks=n_chunks,
-        bytes_total=b1 + b2 + b3 + b4 + b5 + l1_index_bytes + l1_detail_bytes + l2_detail_bytes + bytes_prices,
+        bytes_total=b1 + b2 + b3 + b4 + b5 + b_hotlist + l1_index_bytes + l1_detail_bytes + l2_detail_bytes + bytes_prices,
     )
     _reset_history_cache()
     return result

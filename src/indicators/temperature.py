@@ -5,15 +5,21 @@
 
 由三个维度加权合成：
 1. Z-score 分 (40%): 多周期滚动 Z-score（60/120/250 日），tanh 压缩
-2. 回撤深度 (20%): 距 250 日高点偏离度
+2. 区间位置 (20%): 收盘价在 250 日最高/最低区间中的位置（顶端 ≈ +1，底部 ≈ -1）
+   （2026-08-11 前为「距 250 日高点回撤」，新高时贡献恒为 0，是纯拖累项，
+    导致 raw 上限被压到 0.8、领涨板块永远到不了热/沸——校准后改为区间位置）
 3. 多尺度动量 (40%): 20/60/120 日 ROC + MA 排列
 
 原始温度 ∈ [-1, 1] → 非线性拉伸 → [-100, 100]（分段立方拉伸 + clamp）
 
 分档阈值（拉伸后 [-100, 100] 区间）：
-  沸 ≥ 70，热 ≥ 45，温 ≥ 15，平 (-12, 15)，凉 (-35, -12]，寒 (-65, -35]，冻 ≤ -65
+  沸 ≥ 75，热 ≥ 50，温 ≥ 30，平 (-65, 30)，凉 (-80, -65]，寒 (-95, -80]，冻 ≤ -95
+  （2026-08-13 综合 7 张历史校准图重拟合：参考「平」档位远宽于旧阈值，
+   温 20→30、平/凉 -35→-65、凉/寒 -60→-80、寒/冻 -85→-95，
+   见 docs/calibration/2026-08-12.md）
 
-状态机（非对称确认天数）：
+温度标签由平滑分直接映射分档（2026-08-07 起绕过状态机，避免滞后）；
+下方状态机（非对称确认天数）仅供诊断与测试：
   - 沸 enter=3 / exit=6，冻 enter=4 / exit=8
   - 热/寒 enter=3 / exit=5
   - 温/凉 enter=2 / exit=3
@@ -41,12 +47,12 @@ EXTREME_IDX = {0, 6}  # 冻 / 沸
 
 # ---- 状态机参数 ----
 CONFIRM_DAYS: Dict[str, Dict[str, int]] = {
-    "沸": {"enter": 3, "exit": 1},
-    "冻": {"enter": 3, "exit": 1},
-    "热": {"enter": 2, "exit": 1},
-    "寒": {"enter": 2, "exit": 1},
-    "温": {"enter": 1, "exit": 1},
-    "凉": {"enter": 1, "exit": 1},
+    "沸": {"enter": 3, "exit": 6},
+    "冻": {"enter": 4, "exit": 8},
+    "热": {"enter": 3, "exit": 5},
+    "寒": {"enter": 3, "exit": 5},
+    "温": {"enter": 2, "exit": 3},
+    "凉": {"enter": 2, "exit": 3},
     "平": {"enter": 1, "exit": 1},
 }
 EXTREME_BUFFER_DAYS = 3  # 保留以兼容旧引用（v2 不再使用此常量）
@@ -56,8 +62,9 @@ Z_WEIGHT = 0.40
 DD_WEIGHT = 0.20
 MOM_WEIGHT = 0.40
 
-# ---- 拉伸后 [-100, 100] 区间的分档阈值 ----
-SCORE_THRESHOLDS = [70, 45, 15, -12, -35, -65]  # 沸, 热, 温, 平, 凉, 寒; 其余为冻
+# ---- 拉伸后 [-100, 100] 区间的分档阈值（_raw_bucket_idx 的唯一依据）----
+# 2026-08-13 重拟合：温 20→30，平/凉 -35→-65，凉/寒 -60→-80，寒/冻 -85→-95
+SCORE_THRESHOLDS = [75, 50, 30, -65, -80, -95]  # 沸, 热, 温, 平, 凉, 寒; 其余为冻
 
 
 # ============================================================================
@@ -100,7 +107,8 @@ def stretch_score(raw_temp: np.ndarray) -> np.ndarray:
     """对 [-1, 1] 的原始温度做分段立方拉伸 → [-100, 100]（带 clamp）。
 
     正向: y = x * 65 * (1 + 1.2 * x²)
-    负向: y = x * 65 * (1 + 1.5 * x²)  （负向略放大，冻只在 raw ≤ -0.7 时触发）
+    负向: y = x * 65 * (1 + 1.5 * x²)  （负向略放大；2026-08-11 校准从 2.0 回调，
+          2.0 使冷侧过度放大、全市场系统性偏冷约 1 档）
     clamp: [-100, 100]
     """
     result = np.zeros_like(raw_temp, dtype=float)
@@ -120,19 +128,20 @@ def stretch_score(raw_temp: np.ndarray) -> np.ndarray:
 # ============================================================================
 
 def _raw_bucket_idx(score: float) -> int:
-    """拉伸后分数 → 档位索引（沸=6, ..., 冻=0）。"""
-    if score >= 70:
-        return 6
-    if score >= 45:
-        return 5
-    if score >= 15:
-        return 4
-    if score > -12:
-        return 3
-    if score > -35:
-        return 2
-    if score > -65:
-        return 1
+    """拉伸后分数 → 档位索引（沸=6, ..., 冻=0）。
+
+    阈值取自 SCORE_THRESHOLDS：高档位含边界（>=），「平」及以下不含下界（>），
+    即 沸≥75，热≥50，温≥30，平>-65，凉>-80，寒>-95，其余为冻。
+    """
+    # idx 从 6（沸）递减到 1（寒）；平/凉/寒用严格大于下界
+    for i, th in enumerate(SCORE_THRESHOLDS):
+        idx = len(SCORE_THRESHOLDS) - i  # 6,5,4,3,2,1
+        if idx >= 4:
+            if score >= th:
+                return idx
+        else:
+            if score > th:
+                return idx
     return 0
 
 
@@ -176,12 +185,15 @@ def compute_raw_temperature(
     z_composite[valid_w] /= z_weights_used[valid_w]
     z_score = np.tanh(z_composite * 0.8)
 
-    # ---- 2) 回撤深度 (20%) ----
+    # ---- 2) 250 日区间位置 (20%) ----
+    # 2026-08-11 校准：原「距 250 日高点回撤」在价格创新高时贡献恒为 0（纯拖累项），
+    # 领涨板块因此永远到不了热/沸。改为区间位置：顶端 ≈ +1，底部 ≈ -1，中部 ≈ 0。
     hi250 = _rolling_max(high, 250)
-    dd_pct = np.full(n, 0.0)
-    valid_dd = ~np.isnan(hi250)
-    dd_pct[valid_dd] = (close[valid_dd] - hi250[valid_dd]) / (hi250[valid_dd] + 1e-9)
-    dd_score = np.tanh(dd_pct * 3.5)
+    lo250 = _rolling_min(low, 250)
+    valid_dd = (~np.isnan(hi250)) & (~np.isnan(lo250)) & (hi250 > lo250)
+    pos = np.full(n, 0.5)
+    pos[valid_dd] = (close[valid_dd] - lo250[valid_dd]) / (hi250[valid_dd] - lo250[valid_dd])
+    dd_score = np.tanh((np.clip(pos, 0.0, 1.0) - 0.5) * 4)
 
     # ---- 3) 多尺度动量 (40%) ----
     mom_windows = [20, 60, 120]
@@ -264,8 +276,11 @@ def run_temperature_state_machine(score_smooth) -> List[Optional[str]]:
     规则：
     - NaN：保持上一个有效状态
     - 首个有效值：直接取原始档
-    - 非对称确认：向外（远离"平"）退出用 exit 天数，向内靠近用 enter 天数
-    - 确认后每次走 1 步（相邻转移）
+    - 非对称确认：向外（远离"平"）进入用 enter 天数，向内靠近用 exit 天数
+    - 确认后每次最多走 2 步，朝目标方向（2026-08-07 校准：减少状态机滞后）
+
+    注：温度标签实际由 classify_temperature 用平滑分直接映射（绕过状态机），
+    本函数结果仅供诊断与测试。
 
     Args:
         score_smooth: np.ndarray 或 pd.Series
@@ -304,14 +319,15 @@ def run_temperature_state_machine(score_smooth) -> List[Optional[str]]:
                 need = CONFIRM_DAYS[rl]["enter"]
 
             if pending_days >= need:
-                # 确认天数已满足，直接跳到目标档位
-                # （确认天数本身就是滞后滤波，不需要额外限制为相邻转移）
-                current = rl
+                # 每次最多走 2 步，朝目标方向（减少状态机滞后）
+                step = 1 if tgt_idx > cur_idx else -1
+                steps = min(2, abs(tgt_idx - cur_idx))
+                current = _IDX_BUCKET[cur_idx + step * steps]
                 pending_level = None
                 pending_days = 0
         else:
-            # 回到当前档位：保持 pending 不变（容忍小幅波动，不清零不递减）
-            pass
+            pending_level = None
+            pending_days = 0
 
         state[i] = current
 
@@ -361,8 +377,15 @@ def classify_temperature(
     raw_scaled = stretch_score(raw_temp)
     smooth_arr = smooth_temperature(raw_scaled)
 
-    # 状态机
+    # 状态机（用于缓冲确认，但标签直接用 smooth score 映射，避免滞后）
     states = run_temperature_state_machine(smooth_arr)
+
+    # 用平滑分数直接决定温度标签（绕过状态机滞后）
+    temp_labels = [None] * n
+    for i in range(n):
+        s = smooth_arr[i]
+        if not np.isnan(s):
+            temp_labels[i] = _raw_level_str(float(s))
 
     # 数据不足窗口（最少 60 天才有意义的第一组 Z-score）
     min_window = 60
@@ -374,7 +397,7 @@ def classify_temperature(
     raw_scaled[:valid_start] = np.nan
     smooth_arr[:valid_start] = np.nan
     for i in range(valid_start):
-        states[i] = None
+        temp_labels[i] = None
 
     return pd.DataFrame(
         {
@@ -383,7 +406,7 @@ def classify_temperature(
             "ma60": _rolling_mean(c, 60),
             "temperature_score": raw_scaled,
             "temperature_score_smooth": smooth_arr,
-            "temperature": pd.Categorical(states, categories=TEMPERATURE_LEVELS),
+            "temperature": pd.Categorical(temp_labels, categories=TEMPERATURE_LEVELS),
         },
         index=close.index,
     )[

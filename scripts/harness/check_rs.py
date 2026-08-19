@@ -69,16 +69,27 @@ def main():
     last = piv.index[-1]
     check("价格透表最后日期 == 最新 RS 截面", str(last) == max_date, f"{last} vs {max_date}")
 
+    # 生产语义：只有当日有价格的品种才进入当日横截面排名池
+    # （概念源被代理掐断导致大面积缺当日数据时，旧口径把陈旧品种也拉进排名池，误报超差）
+    df = df.sort_values(["symbol_id", "trade_date"])
+    last_date = df.groupby("symbol_id")["trade_date"].last()
+    alive = last_date[last_date == max_date].index
+    df = df[df["symbol_id"].isin(alive)]
+
     # 各品种加权收益率：与生产语义一致——按品种自身序列排序后 shift(w)（容忍缺日），
     # 缺失窗口 reweight。用 groupby-shift 向量化实现。
-    df = df.sort_values(["symbol_id", "trade_date"])
     wr_map = {}
     last_close = df.groupby("symbol_id")["close"].last()
     for w, wt in WINDOWS:
         shifted = df.groupby("symbol_id")["close"].shift(w)
         ret_w = (df["close"] / shifted - 1) * 100
-        # 取每个品种最后一行的窗口收益率
-        last_ret = ret_w.groupby(df["symbol_id"]).last()
+        # 取每个品种最后一行的窗口收益率。
+        # 注意必须取「最后一行位置」的值（保留 NaN），不能用 groupby.last()：
+        # last() 跳过 NaN，库内概念价格存在 NULL 收盘的占位行，
+        # 生产口径靠 reweight 丢弃缺失窗口，last() 会把数周前的陈旧窗口收益率
+        # 捡回来，造成假超差。
+        is_last_row = ~df["symbol_id"].duplicated(keep="last")
+        last_ret = ret_w[is_last_row].set_axis(df.loc[is_last_row, "symbol_id"])
         wr_map[w] = (last_ret, wt)
     wsum = pd.Series(0.0, index=last_close.index)
     denom = pd.Series(0.0, index=last_close.index)

@@ -2,10 +2,11 @@
 """趋势温度算法单元测试 — v2 多尺度框架。
 
 v2 变化：
-- 三因子 Z-score(40%) + 回撤(20%) + 动量(40%)
-- 非线性拉伸：[-1, 1] → [-100, 100] 分段立方 + clamp
-- 新阈值：沸≥70、热≥45、温≥15、平(-12,15)、凉(-35,-12]、寒(-65,-35]、冻≤-65
-- 状态机：非对称 enter/exit 确认天数
+- 三因子 Z-score(40%) + 区间位置(20%) + 动量(40%)
+- 非线性拉伸：[-1, 1] → [-100, 100] 分段立方 + clamp（正向 1.2x²，负向 1.5x²）
+- 阈值（2026-08-13 重拟合）：沸≥75、热≥50、温≥30、平(-65,30)、凉(-80,-65]、寒(-95,-80]、冻≤-95
+- 状态机：非对称 enter/exit 确认天数，确认后每次最多走 2 步；
+  温度标签由平滑分直接映射（绕过状态机滞后），状态机结果仅供诊断
 """
 
 import sys
@@ -68,16 +69,16 @@ def test_stretch_preserves_sign():
 # ============================================================================
 
 def test_raw_bucket_boundary():
-    """拉伸后分数 → 档位的边界映射（v2 阈值）。"""
+    """拉伸后分数 → 档位的边界映射（2026-08-13 重拟合阈值）。"""
     idx_to_label = {0: "冻", 1: "寒", 2: "凉", 3: "平", 4: "温", 5: "热", 6: "沸"}
     cases = {
-        -100: "冻", -90: "冻", -66: "冻", -65: "冻",
-        -64: "寒", -50: "寒", -36: "寒", -35: "寒",
-        -34: "凉", -20: "凉", -13: "凉", -12: "凉",
-        -11: "平", 0: "平", 14: "平",
-        15: "温", 30: "温", 44: "温",
-        45: "热", 60: "热", 69: "热",
-        70: "沸", 85: "沸", 100: "沸",
+        -100: "冻", -96: "冻", -95: "冻",
+        -94: "寒", -85: "寒", -81: "寒", -80: "寒",
+        -79: "凉", -70: "凉", -66: "凉", -65: "凉",
+        -64: "平", 0: "平", 29: "平",
+        30: "温", 40: "温", 49: "温",
+        50: "热", 60: "热", 74: "热",
+        75: "沸", 85: "沸", 100: "沸",
     }
     for score, expected in cases.items():
         assert idx_to_label[_raw_bucket_idx(score)] == expected, f"score={score} → {idx_to_label[_raw_bucket_idx(score)]}, expected {expected}"
@@ -93,59 +94,63 @@ def test_state_machine_first_valid_takes_raw():
     result = run_temperature_state_machine(scores)
     assert result[0] is None
     assert result[1] is None
-    assert result[2] == "沸"   # 80 ≥ 70
-    assert result[3] == "热"   # 50 ∈ [45,70) → 热，exit=1 直接跳到热
+    assert result[2] == "沸"   # 80 ≥ 75
+    assert result[3] == "沸"   # 50→热，向内走用沸 exit=6，1 天不够确认
 
 
 def test_state_machine_nan_keeps_last_displayed():
     """NaN 沿用上一个有效状态。"""
     scores = pd.Series([50, np.nan, np.nan, -20])
-    # 50 → 热，-20 → 凉
+    # 50 → 热，-20 → 平
     result = run_temperature_state_machine(scores)
     assert result[0] == "热"
     assert result[1] == "热"   # NaN → 沿用
     assert result[2] == "热"   # NaN → 沿用
-    # -20 → 凉，热 exit=1，pending=1 ≥ 1 → 直接跳到凉
-    assert result[3] == "凉"
+    # -20 → 平，向内走用热 exit=5，1 天不够确认
+    assert result[3] == "热"
 
 
 def test_state_machine_confirm_enter():
-    """温 enter=1：目标 1 天即进入。"""
+    """温 enter=2：目标需连续 2 天确认才进入。"""
     scores = pd.Series([0, 30, 30])
-    # 0→平, 30→温(enter=1)
+    # 0→平, 30→温(enter=2)
     result = run_temperature_state_machine(scores)
     assert result[0] == "平"
-    assert result[1] == "温"   # pending=1 ≥ 1, 直接跳到温
+    assert result[1] == "平"   # pending=1 < 2，未确认
+    assert result[2] == "温"   # pending=2 ≥ 2，进入温
 
 
 def test_state_machine_confirm_exit():
-    """热 exit=1：离开 1 天确认。"""
+    """热 exit=5：向内离开需 5 天确认。"""
     scores = pd.Series([50, 10, 10, 10, 10, 10])
     # 50→热, 10→平
     result = run_temperature_state_machine(scores)
     assert result[0] == "热"
-    assert result[1] == "平"   # exit=1, pending=1 ≥ 1 → 直接跳到平
-    assert result[5] == "平"
+    assert result[1] == "热"   # pending=1 < 5
+    assert result[4] == "热"   # pending=4 < 5
+    assert result[5] == "平"   # pending=5 ≥ 5，热(5)→平(3) 走 2 步到位
 
 
 def test_state_machine_adjacent_step():
-    """确认后直接跳到目标（不再一步步走）。"""
-    # 沸(6) → 平(3)：exit=1，1天确认后直接跳到平
+    """确认后每次最多走 2 步（减少状态机滞后）。"""
+    # 沸(6) → 平(3)：沸 exit=6，第 6 天确认后一次走 2 步到温(4)
     scores = pd.Series([80] + [0] * 20)
     result = run_temperature_state_machine(scores)
     assert result[0] == "沸"
-    # 沸 exit=1，1天确认 → 直接跳到平
-    assert result[1] == "平"
+    assert result[1] == "沸"   # exit=6 未确认
+    assert result[6] == "温"   # pending=6 ≥ 6，沸→温（最多 2 步）
+    assert result[9] == "平"   # 温 exit=3，再走 1 步到平
 
 
 def test_state_machine_freeze_confirmation():
-    """冻 enter=3：空头极值需 3 天确认。"""
-    scores = pd.Series([-70, -70, -70, -70])
+    """冻 enter=4：空头极值需 4 天确认。"""
+    scores = pd.Series([-70, -97, -97, -97, -97, -97])
+    # -70→凉, -97→冻(enter=4)
     result = run_temperature_state_machine(scores)
-    assert result[0] == "冻"   # 直接进入
-    assert result[1] == "冻"
-    assert result[2] == "冻"
-    assert result[3] == "冻"
+    assert result[0] == "凉"   # 首个有效值直接取原始档
+    assert result[1] == "凉"   # pending=1 < 4
+    assert result[3] == "凉"   # pending=3 < 4
+    assert result[4] == "冻"   # pending=4 ≥ 4，进入冻
 
 
 # ============================================================================
