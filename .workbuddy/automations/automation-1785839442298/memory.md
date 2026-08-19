@@ -136,3 +136,10 @@
 - **`web/invest-workbench.html` 的 `loadSignals()`** 加了 HOTLIST_DATA 优先分支。
 - **cron prompt 第四步**改成跑 `scripts/build_workbench_deploy.py` + `node --check` 验证。
 - **下次 cron 触发**：08-19 17:00，按新 prompt 跑（已加 node --check 验证脚本 parse）。
+
+## 2026-08-19（15:05，Git 提交与推送）
+
+- **提交前验证**：`pytest` 57 passed；`check_rs.py` 全部通过；`check_temperature.py` 全部通过；工作台构建脚本成功生成 38 个罗盘品种和当日信号 inline 数据；工作台主脚本 `node --check` 通过。
+- **GitHub**：创建提交 `3e667cd`（`fix: update trend calibration and workbench deployment`），已推送到 `origin/main`。
+- **工作区**：提交后仅剩未跟踪运行产物和历史快照（`data/backups/`、`data/portfolio.json`、`data/reports/`、`tmp/`、`web/invest-workbench-2026-08-17.html`、`web/invest-workbench-today.html`），未纳入本次提交。
+
